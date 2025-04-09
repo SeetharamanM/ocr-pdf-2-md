@@ -27,6 +27,8 @@ from PIL import Image
 import logging
 import importlib
 import importlib.util
+import tempfile  # Added tempfile import here
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
