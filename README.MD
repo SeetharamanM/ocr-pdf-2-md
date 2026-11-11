@@ -42,12 +42,12 @@ tesseract --version
 
 Basic usage:
 ```bash
-python pdf_to_markdown.py input.pdf
+python pdf2md.py input.pdf
 ```
 
 Advanced usage:
 ```bash
-python pdf_to_markdown.py input.pdf --output_dir my_markdown_files --dpi 400 --lang eng+fra --pages 1,3-5
+python pdf2md.py input.pdf --output_dir my_markdown_files --dpi 400 --lang eng+fra --pages 1,3-5
 ```
 
 ### Command Line Arguments
@@ -73,7 +73,7 @@ sudo apt-get install tesseract-ocr-deu
 
 To use multiple languages together:
 ```bash
-python pdf_to_markdown.py input.pdf --lang eng+fra
+python pdf2md.py input.pdf --lang eng+fra
 ```
 
 ## Troubleshooting

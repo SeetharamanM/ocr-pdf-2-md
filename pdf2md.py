@@ -237,8 +237,12 @@ def try_ocrmypdf_processing(pdf_path, output_path):
         logger.error(f"OCRmyPDF processing failed: {e}")
         return False
 
-def pdf_to_markdown_direct(pdf_path, output_dir, base_name, lang="eng"):
-    """Attempt to extract text directly from PDF without OCR if possible"""
+def pdf_to_markdown_direct(pdf_path, output_dir, base_name, pages=None):
+    """Attempt to extract text directly from PDF without OCR if possible.
+
+    Returns the set of page numbers (1-based) that were saved. Pages not in
+    the set (e.g. scanned pages with no text layer) still need OCR.
+    """
     try:
         # Check if PyPDF2 is installed or try to install it
         if importlib.util.find_spec("PyPDF2") is None:
@@ -248,15 +252,18 @@ def pdf_to_markdown_direct(pdf_path, output_dir, base_name, lang="eng"):
                 subprocess.check_call([sys.executable, "-m", "pip", "install", "PyPDF2"])
             except Exception as e:
                 logger.error(f"Failed to install PyPDF2: {e}")
-                return False
+                return set()
         
         import PyPDF2
         
+        saved = set()
         try:
             with open(pdf_path, 'rb') as file:
                 reader = PyPDF2.PdfReader(file)
                 
                 for i, page in enumerate(reader.pages):
+                    if pages and (i + 1) not in pages:
+                        continue
                     try:
                         text = page.extract_text()
                         
@@ -268,19 +275,20 @@ def pdf_to_markdown_direct(pdf_path, output_dir, base_name, lang="eng"):
                             with open(output_file, 'w', encoding='utf-8') as f:
                                 f.write(formatted_text)
                             
+                            saved.add(i + 1)
                             logger.info(f"Extracted text directly from page {i+1} (no OCR needed)")
                     except Exception as page_error:
                         logger.warning(f"Could not extract text from page {i+1}: {page_error}")
                 
-                return True
+                return saved
                 
         except Exception as e:
             logger.warning(f"Direct text extraction failed: {e}")
-            return False
+            return saved
             
     except Exception as e:
         logger.warning(f"PDF direct text extraction setup failed: {e}")
-        return False
+        return set()
 
 def main():
     args = setup_args()
@@ -309,7 +317,7 @@ def main():
     
     # Try OCRmyPDF if requested (direct PDF to searchable PDF conversion)
     if args.use_ocrmypdf:
-        ocr_pdf_path = os.path.join(output_dir, os.path.basename(original_pdf_path).replace('.pdf', '_ocr.pdf'))
+        ocr_pdf_path = os.path.join(output_dir, os.path.splitext(os.path.basename(original_pdf_path))[0] + '_ocr.pdf')
         if try_ocrmypdf_processing(pdf_path, ocr_pdf_path):
             logger.info(f"Successfully created searchable PDF with OCRmyPDF: {ocr_pdf_path}")
             pdf_path = ocr_pdf_path
@@ -317,20 +325,28 @@ def main():
     # Get base filename without extension
     base_name = os.path.splitext(os.path.basename(original_pdf_path))[0]
     
-    # Try direct text extraction first (might work for some PDFs without OCR)
-    direct_extraction = pdf_to_markdown_direct(pdf_path, output_dir, base_name)
+    # Try direct text extraction first (works for PDFs that already have a text layer)
+    requested = set(parse_page_ranges(args.pages, 10**6)) if args.pages else None
+    done_pages = pdf_to_markdown_direct(pdf_path, output_dir, base_name, pages=requested)
+    if done_pages:
+        logger.info(f"Extracted text directly (no OCR) from {len(done_pages)} page(s)")
     
-    if direct_extraction:
-        logger.info("Successfully extracted text directly from PDF without OCR")
-    else:
+    # OCR every requested page that direct extraction could not handle
+    try:
+        total_pages = pdfinfo_from_path(pdf_path)["Pages"]
+    except Exception:
+        total_pages = None
+    if total_pages is None or set(parse_page_ranges(args.pages, total_pages)) - done_pages:
         # Convert PDF to images
         try:
             images = pdf_to_images(pdf_path, dpi=args.dpi)
             total_pages = len(images)
             logger.info(f"Total pages detected: {total_pages}")
             
-            # Parse page ranges if specified
-            pages_to_process = parse_page_ranges(args.pages, total_pages)
+            # Parse page ranges if specified, skipping pages already extracted
+            pages_to_process = [p for p in parse_page_ranges(args.pages, total_pages)
+                                if p not in done_pages]
+            logger.info(f"Running OCR on {len(pages_to_process)} page(s)")
             
             # Process each page
             for page_num in pages_to_process:
@@ -356,6 +372,8 @@ def main():
         except Exception as e:
             logger.error(f"Error during image conversion and OCR: {e}")
             sys.exit(1)
+    else:
+        logger.info("All requested pages had a text layer; OCR not needed")
     
     # Clean up temporary files
     if temp_pdf_path and os.path.exists(temp_pdf_path):
