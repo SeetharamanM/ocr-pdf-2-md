@@ -45,6 +45,8 @@ def setup_args():
     parser.add_argument("--timeout", type=int, default=180, help="Timeout for Tesseract OCR in seconds")
     parser.add_argument("--fix-pdf", action="store_true", help="Force PDF repair for problematic files")
     parser.add_argument("--use-ocrmypdf", action="store_true", help="Use OCRmyPDF for enhanced processing")
+    parser.add_argument("--single-file", action="store_true",
+                        help="Combine all pages into one Markdown file (<name>.md) instead of one file per page")
     return parser.parse_args()
 
 def parse_page_ranges(page_range_str, total_pages):
@@ -290,6 +292,27 @@ def pdf_to_markdown_direct(pdf_path, output_dir, base_name, pages=None):
         logger.warning(f"PDF direct text extraction setup failed: {e}")
         return set()
 
+def combine_pages(output_dir, base_name):
+    """Merge <base_name>_page_N.md files into a single <base_name>.md, in page order"""
+    pattern = re.compile(re.escape(base_name) + r"_page_(\d+)\.md$")
+    page_files = sorted(
+        ((int(m.group(1)), f) for f in os.listdir(output_dir) if (m := pattern.match(f))),
+    )
+    if not page_files:
+        logger.warning("No page files found to combine")
+        return
+    combined_path = os.path.join(output_dir, f"{base_name}.md")
+    with open(combined_path, 'w', encoding='utf-8') as out:
+        for i, (page_num, fname) in enumerate(page_files):
+            path = os.path.join(output_dir, fname)
+            with open(path, encoding='utf-8') as f:
+                text = f.read().strip()
+            if i:
+                out.write("\n\n---\n\n")
+            out.write(f"<!-- Page {page_num} -->\n\n{text}\n")
+            os.remove(path)
+    logger.info(f"Combined {len(page_files)} page(s) into: {combined_path}")
+
 def main():
     args = setup_args()
     pdf_path = args.pdf_path
@@ -374,6 +397,9 @@ def main():
             sys.exit(1)
     else:
         logger.info("All requested pages had a text layer; OCR not needed")
+    
+    if args.single_file:
+        combine_pages(output_dir, base_name)
     
     # Clean up temporary files
     if temp_pdf_path and os.path.exists(temp_pdf_path):

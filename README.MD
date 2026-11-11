@@ -58,6 +58,7 @@ python pdf2md.py input.pdf --output_dir my_markdown_files --dpi 400 --lang eng+f
 - `--lang`: Tesseract language code(s) (default: eng)
 - `--pages`: Pages to process (e.g., '1,3-5,10'). Default: all pages
 - `--timeout`: Timeout for Tesseract OCR in seconds (default: 180)
+- `--single-file`: Combine all pages into one Markdown file (`<name>.md`) instead of one file per page
 
 ### Language Support
 
